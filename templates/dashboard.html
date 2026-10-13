@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NetGuard - Network Security Monitor</title>
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --orange: #f0883e;
+      --purple: #a371f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-icon { font-size: 24px; }
+    .logo h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+    .logo span { font-size: 12px; color: var(--muted); }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .status-badge {
+      padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border);
+    }
+    .status-badge.active { background: #1a3a1a; color: var(--green); border-color: var(--green); }
+    .status-badge.inactive { background: #3a1a1a; color: var(--red); border-color: var(--red); }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 12px 20px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Layout ── */
+    .main { padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
+
+    /* ── Control Panel ── */
+    .control-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .control-panel select, .control-panel input {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      min-width: 180px;
+    }
+    .btn {
+      padding: 8px 18px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:active { transform: scale(0.97); }
+    .btn-green { background: var(--green); color: #000; }
+    .btn-red { background: var(--red); color: #fff; }
+    .btn-blue { background: var(--accent); color: #000; }
+    .btn-orange { background: var(--orange); color: #000; }
+    .btn-muted { background: var(--border); color: var(--text); }
+    .btn-purple { background: var(--purple); color: #000; }
+
+    /* ── Stats Cards ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: var(--accent); }
+    .stat-card .val { font-size: 30px; font-weight: 700; margin-bottom: 4px; }
+    .stat-card .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .stat-card.total .val { color: var(--accent); }
+    .stat-card.high .val { color: var(--red); }
+    .stat-card.medium .val { color: var(--orange); }
+    .stat-card.low .val { color: var(--yellow); }
+
+    /* ── Charts Row ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .chart-card h3 { font-size: 13px; color: var(--muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .chart-card canvas { max-height: 200px; }
+
+    /* ── Alerts Table ── */
+    .alerts-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .alerts-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .alerts-header h2 { font-size: 15px; }
+    .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-btn {
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: #1c2128;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:hover { background: #1c2128; }
+    tbody tr.new-alert { animation: flashIn 1s ease-out; }
+    @keyframes flashIn {
+      0% { background: #1a2a3a; }
+      100% { background: transparent; }
+    }
+    td { padding: 10px 14px; font-size: 13px; vertical-align: top; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-HIGH   { background: #3a1a1a; color: var(--red); }
+    .badge-MEDIUM { background: #2a1f10; color: var(--orange); }
+    .badge-LOW    { background: #2a2510; color: var(--yellow); }
+    .type-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-family: monospace; font-weight: 600;
+    }
+    .type-ARP_SPOOF      { background: #2a1a3a; color: var(--purple); }
+    .type-ARP_FLOOD      { background: #2a1a3a; color: var(--purple); }
+    .type-GRATUITOUS_ARP { background: #1a2a2a; color: #56d364; }
+    .type-MITM_TTL       { background: #3a1a1a; color: var(--red); }
+    .type-SSL_STRIP      { background: #3a1a1a; color: var(--red); }
+    .type-ICMP_REDIRECT  { background: #3a2010; color: var(--orange); }
+    .type-DNS_RESPONSE   { background: #1a2530; color: var(--accent); }
+    .type-PACKET_REPLAY  { background: #3a1a1a; color: var(--red); }
+    .type-PORT_SCAN      { background: #3a2a10; color: #e3b341; }
+    .type-BRUTE_FORCE    { background: #3a1a1a; color: var(--red); }
+    .type-DOS_FLOOD      { background: #3a1010; color: var(--red); }
+    .type-SUSPICIOUS_PORT{ background: #2a1a2a; color: var(--purple); }
+    .type-DATA_EXFIL     { background: #3a1a10; color: var(--orange); }
+    .table-wrap { max-height: 450px; overflow-y: auto; }
+
+    /* ── ARP Table ── */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .arp-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .arp-card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+    .arp-table-wrap { max-height: 250px; overflow-y: auto; }
+    .arp-table-wrap table thead th { position: sticky; top: 0; }
+
+    /* ── Live Feed ── */
+    .feed-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .feed-card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .feed-card-header h3 { font-size: 13px; font-weight: 600; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: pulse 1.2s infinite; display: inline-block; margin-right: 6px; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+    #live-feed {
+      height: 220px;
+      overflow-y: auto;
+      padding: 10px 16px;
+      font-size: 12px;
+      font-family: monospace;
+      line-height: 1.6;
+    }
+    .feed-line { margin-bottom: 2px; }
+    .feed-HIGH   { color: var(--red); }
+    .feed-MEDIUM { color: var(--orange); }
+    .feed-LOW    { color: var(--yellow); }
+
+    /* ── Toast ── */
+    #toast-container { position: fixed; top: 70px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 4px solid var(--red); border-radius: 6px;
+      padding: 10px 16px; font-size: 13px; max-width: 360px;
+      animation: slideIn 0.3s ease-out, fadeOut 0.4s 4.6s forwards;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .toast-HIGH   { border-left-color: var(--red); }
+    .toast-MEDIUM { border-left-color: var(--orange); }
+    .toast-LOW    { border-left-color: var(--yellow); }
+    @keyframes slideIn { from{transform:translateX(120%)} to{transform:translateX(0)} }
+    @keyframes fadeOut { from{opacity:1} to{opacity:0;pointer-events:none} }
+
+    /* ── Live Packet Capture ── */
+    .pkt-proto-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .proto-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      text-align: center;
+      border-top: 3px solid transparent;
+    }
+    .proto-card.tcp  { border-top-color: var(--accent); }
+    .proto-card.udp  { border-top-color: var(--green); }
+    .proto-card.icmp { border-top-color: var(--yellow); }
+    .proto-card.arp  { border-top-color: var(--purple); }
+    .proto-card .pval { font-size: 26px; font-weight: 700; margin-bottom: 2px; }
+    .proto-card .plbl { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+    .proto-card.tcp  .pval { color: var(--accent); }
+    .proto-card.udp  .pval { color: var(--green); }
+    .proto-card.icmp .pval { color: var(--yellow); }
+    .proto-card.arp  .pval { color: var(--purple); }
+    .proto-bytes { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .pkt-table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .pkt-table-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .pkt-table-header h3 { font-size: 13px; font-weight: 600; }
+    #pkt-table-body { max-height: 400px; overflow-y: auto; }
+    .pkt-row-TCP   { color: var(--accent); }
+    .pkt-row-UDP   { color: var(--green); }
+    .pkt-row-ICMP  { color: var(--yellow); }
+    .pkt-row-ARP   { color: var(--purple); }
+    .pkt-row-OTHER { color: var(--muted); }
+
+    .pkt-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pkt-filter-btn {
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .pkt-filter-btn.active { font-weight: 600; }
+    .pkt-filter-btn.f-ALL  { }
+    .pkt-filter-btn.f-TCP.active  { background: #1a2a3a; color: var(--accent); border-color: var(--accent); }
+    .pkt-filter-btn.f-UDP.active  { background: #1a3a1a; color: var(--green);  border-color: var(--green); }
+    .pkt-filter-btn.f-ICMP.active { background: #2a2510; color: var(--yellow); border-color: var(--yellow); }
+    .pkt-filter-btn.f-ARP.active  { background: #2a1a3a; color: var(--purple); border-color: var(--purple); }
+    .pkt-filter-btn.f-ALL.active  { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* ── Module Info ── */
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .module-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .module-card:hover { box-shadow: 0 0 0 2px rgba(88,166,255,0.3); }
+    .module-card.expanded { border-color: var(--accent); }
+    .module-header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .module-emoji { font-size: 22px; }
+    .module-title { font-size: 14px; font-weight: 700; flex: 1; }
+    .module-file { font-size: 11px; font-family: monospace; color: var(--muted); }
+    .module-expand-icon { font-size: 16px; color: var(--muted); transition: transform 0.2s; }
+    .module-card.expanded .module-expand-icon { transform: rotate(180deg); }
+    .module-desc {
+      padding: 10px 18px;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .module-detects {
+      padding: 8px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .detect-pill {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: monospace;
+      background: #1c2128;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .module-body {
+      display: none;
+      padding: 0 18px 14px;
+    }
+    .module-card.expanded .module-body { display: block; }
+    .fn-item {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #0d1117;
+      border-radius: 6px;
+      border-left: 3px solid var(--border);
+    }
+    .fn-name {
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .fn-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ── Demo Panel ── */
+    .demo-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .demo-panel h2 { font-size: 15px; margin-bottom: 6px; }
+    .demo-panel p { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .demo-btn {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .demo-btn:hover { border-color: var(--accent); background: #1c2128; }
+    .demo-btn:active { transform: scale(0.97); }
+    .demo-btn .demo-icon { font-size: 16px; }
+    .demo-btn .demo-label { display: flex; flex-direction: column; }
+    .demo-btn .demo-type { font-size: 11px; font-family: monospace; color: var(--muted); }
+    .demo-btn.HIGH-btn .demo-icon { filter: drop-shadow(0 0 4px var(--red)); }
+    .demo-btn.MEDIUM-btn .demo-icon { filter: drop-shadow(0 0 4px var(--orange)); }
+    .demo-btn.LOW-btn .demo-icon { filter: drop-shadow(0 0 4px var(--yellow)); }
+
+    .demo-all-bar { display: flex; gap: 10px; align-items: center; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .charts-row, .bottom-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <span class="logo-icon">🛡️</span>
+    <div>
+      <h1>NetGuard</h1>
+      <span>Network Security Monitor</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <span id="status-badge" class="status-badge inactive">● Inactive</span>
+    <button class="btn btn-muted" onclick="refreshAll()">⟳ Refresh</button>
+  </div>
+</header>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('dashboard', this)">📊 Dashboard</button>
+  <button class="tab-btn" onclick="showTab('packets', this)">📡 Live Packets</button>
+  <button class="tab-btn" onclick="showTab('modules', this)">🔬 Module Explorer</button>
+  <button class="tab-btn" onclick="showTab('demo', this)">🧪 Demo Alerts</button>
+</div>
+
+<!-- ══════════ TAB: DASHBOARD ══════════ -->
+<div id="tab-dashboard" class="tab-content active">
+<div class="main">
+
+  <!-- Control Panel -->
+  <div class="control-panel">
+    <div>
+      <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Network Interface</label>
+      <select id="iface-select">
+        <option value="">Default (auto)</option>
+      </select>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px">
+      <button class="btn btn-green" onclick="startMonitoring()">▶ Start Monitoring</button>
+      <button class="btn btn-red" onclick="clearAlerts()">🗑 Clear Alerts</button>
+    </div>
+    <div style="margin-left:auto;font-size:12px;color:var(--muted)">
+      <div>Detectors: ARP Spoof &nbsp;|&nbsp; MITM &nbsp;|&nbsp; IDS &nbsp;|&nbsp; Port Scan</div>
+      <div id="last-update" style="margin-top:2px"></div>
+    </div>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="stats-grid">
+    <div class="stat-card total"><div class="val" id="stat-total">0</div><div class="lbl">Total Alerts</div></div>
+    <div class="stat-card high"><div class="val" id="stat-high">0</div><div class="lbl">High Severity</div></div>
+    <div class="stat-card medium"><div class="val" id="stat-medium">0</div><div class="lbl">Medium</div></div>
+    <div class="stat-card low"><div class="val" id="stat-low">0</div><div class="lbl">Low</div></div>
+    <div class="stat-card"><div class="val" id="stat-arp" style="color:var(--purple)">0</div><div class="lbl">ARP Attacks</div></div>
+    <div class="stat-card"><div class="val" id="stat-mitm" style="color:var(--red)">0</div><div class="lbl">MITM Alerts</div></div>
+    <div class="stat-card"><div class="val" id="stat-scan" style="color:var(--yellow)">0</div><div class="lbl">Port Scans</div></div>
+    <div class="stat-card"><div class="val" id="stat-brute" style="color:var(--orange)">0</div><div class="lbl">Brute Force</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <h3>Alert Types Distribution</h3>
+      <canvas id="typeChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Severity Breakdown</h3>
+      <canvas id="severityChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Alerts Table -->
+  <div class="alerts-card">
+    <div class="alerts-header">
+      <h2>🚨 Security Alerts</h2>
+      <div class="filter-bar">
+        <button class="filter-btn active" onclick="filterAlerts('ALL', this)">All</button>
+        <button class="filter-btn" onclick="filterAlerts('ARP_SPOOF', this)">ARP Spoof</button>
+        <button class="filter-btn" onclick="filterAlerts('MITM_TTL', this)">MITM</button>
+        <button class="filter-btn" onclick="filterAlerts('PORT_SCAN', this)">Port Scan</button>
+        <button class="filter-btn" onclick="filterAlerts('BRUTE_FORCE', this)">Brute Force</button>
+        <button class="filter-btn" onclick="filterAlerts('DOS_FLOOD', this)">DoS</button>
+        <button class="filter-btn" onclick="filterAlerts('HIGH', this)">HIGH Only</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="alerts-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Severity</th>
+            <th>Src IP</th>
+            <th>Dst IP</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody id="alerts-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">No alerts yet. Start monitoring to begin detection.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Bottom Grid: ARP Table + Live Feed -->
+  <div class="bottom-grid">
+    <div class="arp-card">
+      <div class="arp-card-header">📋 ARP Cache Table (IP → MAC Mapping)</div>
+      <div class="arp-table-wrap">
+        <table>
+          <thead><tr><th>IP Address</th><th>MAC Address</th></tr></thead>
+          <tbody id="arp-body"><tr><td colspan="2" style="text-align:center;color:var(--muted);padding:20px">Empty</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="feed-card">
+      <div class="feed-card-header">
+        <h3><span class="live-dot"></span>Live Alert Feed</h3>
+        <button class="btn btn-muted" style="padding:3px 10px;font-size:11px" onclick="document.getElementById('live-feed').innerHTML=''">Clear</button>
+      </div>
+      <div id="live-feed"><span style="color:var(--muted)">Waiting for alerts...</span></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════ TAB: LIVE PACKETS ══════════ -->
+<div id="tab-packets" class="tab-content">
+<div class="main">
+
+  <!-- Protocol Stats Cards -->
+  <div class="pkt-proto-bar">
+    <div class="proto-card tcp">
+      <div class="pval" id="pkt-tcp">0</div>
+      <div class="plbl">TCP Packets</div>
+      <div class="proto-bytes" id="pkt-tcp-bytes">0 B</div>
+    </div>
+    <div class="proto-card udp">
+      <div class="pval" id="pkt-udp">0</div>
+      <div class="plbl">UDP Packets</div>
+      <div class="proto-bytes" id="pkt-udp-bytes">0 B</div>
+    </div>
+    <div class="proto-card icmp">
+      <div class="pval" id="pkt-icmp">0</div>
+      <div class="plbl">ICMP Packets</div>
+      <div class="proto-bytes" id="pkt-icmp-bytes">0 B</div>
+    </div>
+    <div class="proto-card arp">
+      <div class="pval" id="pkt-arp">0</div>
+      <div class="plbl">ARP Packets</div>
+      <div class="proto-bytes" id="pkt-arp-bytes">0 B</div>
+    </div>
+    <div class="proto-card" style="border-top-color:var(--muted)">
+      <div class="pval" id="pkt-total" style="color:var(--text)">0</div>
+      <div class="plbl">Total Captured</div>
+      <div class="proto-bytes" id="pkt-total-bytes">0 B</div>
+    </div>
+  </div>
+
+  <!-- Charts row for protocols -->
+  <div class="charts-row" style="margin-bottom:16px">
+    <div class="chart-card">
+      <h3>Protocol Distribution</h3>
+      <canvas id="protoChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Bytes Captured per Protocol</h3>
+      <canvas id="bytesChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Live Packet Table -->
+  <div class="pkt-table-wrap">
+    <div class="pkt-table-header">
+      <h3><span class="live-dot"></span> Live Packet Stream</h3>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div class="pkt-filter-bar">
+          <button class="pkt-filter-btn f-ALL active" onclick="setPktFilter('ALL', this)">All</button>
+          <button class="pkt-filter-btn f-TCP"  onclick="setPktFilter('TCP', this)">TCP</button>
+          <button class="pkt-filter-btn f-UDP"  onclick="setPktFilter('UDP', this)">UDP</button>
+          <button class="pkt-filter-btn f-ICMP" onclick="setPktFilter('ICMP', this)">ICMP</button>
+          <button class="pkt-filter-btn f-ARP"  onclick="setPktFilter('ARP', this)">ARP</button>
+        </div>
+        <button class="btn btn-muted" style="padding:4px 10px;font-size:11px" onclick="clearPackets()">Clear</button>
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="pkt-pause" /> Pause
+        </label>
+      </div>
+    </div>
+    <div id="pkt-table-body">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Protocol</th>
+            <th>Source IP</th>
+            <th>Destination IP</th>
+            <th>Src Port</th>
+            <th>Dst Port</th>
+            <th>Flags</th>
+            <th>Length</th>
+            <th>Info</th>
+          </tr>
+        </thead>
+        <tbody id="pkt-body">
+          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">Start monitoring to see live packets...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:12px;font-size:12px;color:var(--muted)">
+    💡 <strong>Tip:</strong> Blue = TCP &nbsp;|&nbsp; Green = UDP &nbsp;|&nbsp; Yellow = ICMP &nbsp;|&nbsp; Purple = ARP &nbsp;|&nbsp; ⚠️ = suspicious port
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════ TAB: MODULE EXPLORER ══════════ -->
+<div id="tab-modules" class="tab-content">
+<div class="main">
+
+  <div style="margin-bottom:20px">
+    <h2 style="font-size:18px;margin-bottom:6px">🔬 Module Explorer</h2>
+    <p style="font-size:13px;color:var(--muted)">Click on any module card to expand it and see exactly what functions are running inside, what they detect, and how they work.</p>
+  </div>
+
+  <div class="modules-grid" id="modules-grid">
+    <div style="text-align:center;color:var(--muted);padding:40px;grid-column:1/-1">Loading modules...</div>
+  </div>
+
+  <!-- System Architecture Diagram -->
+  <div class="chart-card" style="margin-bottom:20px">
+    <h3>System Data Flow</h3>
+    <div style="padding:16px;font-family:monospace;font-size:12px;color:var(--muted);line-height:2">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="background:#1c2128;border:1px solid var(--border);padding:4px 10px;border-radius:4px">🌐 Network Interface</span>
+        <span>→</span>
+        <span style="background:#1c2128;border:1px solid var(--accent);padding:4px 10px;border-radius:4px;color:var(--accent)">Scapy sniff()</span>
+        <span>→</span>
+        <span style="background:#1c2128;border:1px solid var(--purple);padding:4px 10px;border-radius:4px;color:var(--purple)">ARP Detector</span>
+        <span>/</span>
+        <span style="background:#1c2128;border:1px solid var(--red);padding:4px 10px;border-radius:4px;color:var(--red)">MITM Detector</span>
+        <span>/</span>
+        <span style="background:#1c2128;border:1px solid var(--orange);padding:4px 10px;border-radius:4px;color:var(--orange)">IDS</span>
+        <span>→</span>
+        <span style="background:#1c2128;border:1px solid var(--yellow);padding:4px 10px;border-radius:4px;color:var(--yellow)">logger.log_alert()</span>
+        <span>→</span>
+        <span style="background:#1c2128;border:1px solid var(--green);padding:4px 10px;border-radius:4px;color:var(--green)">SQLite DB</span>
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="width:180px"></span>
+        <span style="opacity:0.5">↓ socketio.emit()</span>
+        <span style="opacity:0.5">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓ REST API</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="width:180px"></span>
+        <span style="background:#1c2128;border:1px solid var(--accent);padding:4px 10px;border-radius:4px;color:var(--accent)">🖥️ Flask + SocketIO (app.py)</span>
+        <span>→</span>
+        <span style="background:#1c2128;border:1px solid var(--text);padding:4px 10px;border-radius:4px">🌐 Browser Dashboard</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════ TAB: DEMO ALERTS ══════════ -->
+<div id="tab-demo" class="tab-content">
+<div class="main">
+
+  <div class="demo-panel">
+    <h2>🧪 Demo Alert Generator</h2>
+    <p>Click any attack type below to inject a realistic fake alert into the dashboard in real-time. This lets you demonstrate the system without needing a real attack. Each click fires a live Socket.IO alert.</p>
+
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">ARP Attacks</div>
+    <div class="demo-grid">
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('ARP_SPOOF')">
+        <span class="demo-icon">🎭</span>
+        <span class="demo-label">
+          <span>ARP Spoofing</span>
+          <span class="demo-type">ARP_SPOOF · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn MEDIUM-btn" onclick="demoAlert('ARP_FLOOD')">
+        <span class="demo-icon">🌊</span>
+        <span class="demo-label">
+          <span>ARP Flood</span>
+          <span class="demo-type">ARP_FLOOD · MEDIUM</span>
+        </span>
+      </button>
+      <button class="demo-btn LOW-btn" onclick="demoAlert('GRATUITOUS_ARP')">
+        <span class="demo-icon">📢</span>
+        <span class="demo-label">
+          <span>Gratuitous ARP</span>
+          <span class="demo-type">GRATUITOUS_ARP · LOW</span>
+        </span>
+      </button>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">MITM Attacks</div>
+    <div class="demo-grid">
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('MITM_TTL')">
+        <span class="demo-icon">⏱️</span>
+        <span class="demo-label">
+          <span>TTL Anomaly</span>
+          <span class="demo-type">MITM_TTL · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('SSL_STRIP')">
+        <span class="demo-icon">🔓</span>
+        <span class="demo-label">
+          <span>SSL Stripping</span>
+          <span class="demo-type">SSL_STRIP · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('ICMP_REDIRECT')">
+        <span class="demo-icon">↪️</span>
+        <span class="demo-label">
+          <span>ICMP Redirect</span>
+          <span class="demo-type">ICMP_REDIRECT · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn MEDIUM-btn" onclick="demoAlert('PACKET_REPLAY')">
+        <span class="demo-icon">🔁</span>
+        <span class="demo-label">
+          <span>Packet Replay</span>
+          <span class="demo-type">PACKET_REPLAY · MEDIUM</span>
+        </span>
+      </button>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Intrusion Detection</div>
+    <div class="demo-grid">
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('PORT_SCAN')">
+        <span class="demo-icon">🔎</span>
+        <span class="demo-label">
+          <span>Port Scan</span>
+          <span class="demo-type">PORT_SCAN · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('DOS_FLOOD')">
+        <span class="demo-icon">💥</span>
+        <span class="demo-label">
+          <span>DoS Flood</span>
+          <span class="demo-type">DOS_FLOOD · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('BRUTE_FORCE')">
+        <span class="demo-icon">🔨</span>
+        <span class="demo-label">
+          <span>Brute Force</span>
+          <span class="demo-type">BRUTE_FORCE · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('SUSPICIOUS_PORT')">
+        <span class="demo-icon">⚠️</span>
+        <span class="demo-label">
+          <span>Suspicious Port</span>
+          <span class="demo-type">SUSPICIOUS_PORT · HIGH</span>
+        </span>
+      </button>
+      <button class="demo-btn HIGH-btn" onclick="demoAlert('DATA_EXFIL')">
+        <span class="demo-icon">📤</span>
+        <span class="demo-label">
+          <span>Data Exfiltration</span>
+          <span class="demo-type">DATA_EXFIL · HIGH</span>
+        </span>
+      </button>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+      <div class="demo-all-bar">
+        <button class="btn btn-orange" onclick="demoAll()">🚀 Fire ALL Alerts (12 scenarios)</button>
+        <span style="font-size:12px;color:var(--muted)">Injects all attack types at once — perfect for a full demo.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demo log -->
+  <div class="feed-card">
+    <div class="feed-card-header">
+      <h3>📋 Demo Activity Log</h3>
+      <button class="btn btn-muted" style="padding:3px 10px;font-size:11px" onclick="document.getElementById('demo-log').innerHTML=''">Clear</button>
+    </div>
+    <div id="demo-log" style="height:200px;overflow-y:auto;padding:10px 16px;font-size:12px;font-family:monospace;line-height:1.8">
+      <span style="color:var(--muted)">Click a demo button above to inject alerts...</span>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script>
+  const socket = io();
+  let allAlerts = [];
+  let currentFilter = 'ALL';
+  let typeChart = null, severityChart = null, protoChart = null, bytesChart = null;
+
+  // Packet capture state
+  let allPackets = [];
+  let pktFilter = 'ALL';
+  let pktPaused = false;
+  const MAX_PACKETS = 500;
+
+  // ── Tab switching ──────────────────────────────────────────────
+  function showTab(name, btn) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+
+    if (name === 'modules') loadModules();
+  }
+
+  // ── Socket Events ──────────────────────────────────────────────
+  socket.on('connect', () => {
+    loadInterfaces();
+    refreshAll();
+  });
+
+  socket.on('status', data => {
+    updateStatusBadge(data.monitoring);
+  });
+
+  socket.on('monitoring_started', data => {
+    updateStatusBadge(true);
+    showToast('✅ Monitoring started on ' + data.interface, 'LOW');
+  });
+
+  socket.on('alerts_cleared', () => {
+    allAlerts = [];
+    renderAlerts();
+    refreshStats();
+  });
+
+  socket.on('new_alert', data => {
+    const now = new Date().toLocaleTimeString();
+    const alert = {
+      timestamp: now,
+      alert_type: data.type,
+      severity: data.severity,
+      src_ip: data.src_ip || '-',
+      dst_ip: data.dst_ip || '-',
+      description: data.description,
+      _new: true
+    };
+    allAlerts.unshift(alert);
+    if (allAlerts.length > 300) allAlerts.pop();
+
+    renderAlerts();
+    refreshStats();
+    addLiveFeedLine(alert);
+    showToast(`[${data.type}] ${data.description.substring(0, 100)}...`, data.severity);
+  });
+
+  // ── Live Packet Events ─────────────────────────────────────────
+  socket.on('live_packet', data => {
+    if (pktPaused) return;
+
+    allPackets.unshift(data);
+    if (allPackets.length > MAX_PACKETS) allPackets.pop();
+
+    renderPackets();
+  });
+
+  socket.on('proto_stats', data => {
+    updateProtoStats(data);
+  });
+
+  // ── API Calls ──────────────────────────────────────────────────
+  async function loadInterfaces() {
+    try {
+      const res = await fetch('/api/interfaces');
+      const ifaces = await res.json();
+      const sel = document.getElementById('iface-select');
+      ifaces.forEach(iface => {
+        const opt = document.createElement('option');
+        opt.value = iface;
+        opt.textContent = iface;
+        sel.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  async function startMonitoring() {
+    const iface = document.getElementById('iface-select').value;
+    try {
+      const res = await fetch('/api/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ interface: iface || null })
+      });
+      const data = await res.json();
+      if (data.status === 'already_running') {
+        showToast('⚠️ Monitoring is already active', 'LOW');
+      }
+    } catch(e) {
+      showToast('❌ Failed to start monitoring: ' + e.message, 'HIGH');
+    }
+  }
+
+  async function clearAlerts() {
+    if (!confirm('Clear all alerts from database?')) return;
+    await fetch('/api/clear', { method: 'POST' });
+  }
+
+  async function refreshAll() {
+    await Promise.all([loadAlerts(), refreshStats(), loadArpTable()]);
+    document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  }
+
+  async function loadAlerts() {
+    try {
+      const res = await fetch('/api/alerts?limit=200');
+      allAlerts = await res.json();
+      renderAlerts();
+    } catch(e) {}
+  }
+
+  async function refreshStats() {
+    try {
+      const res = await fetch('/api/stats');
+      const stats = await res.json();
+      updateStatCards(stats);
+      updateCharts(stats);
+    } catch(e) {}
+  }
+
+  async function loadArpTable() {
+    try {
+      const res = await fetch('/api/arp_table');
+      const table = await res.json();
+      const tbody = document.getElementById('arp-body');
+      const entries = Object.entries(table);
+      if (entries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:20px">Empty</td></tr>';
+        return;
+      }
+      tbody.innerHTML = entries.map(([ip, mac]) =>
+        `<tr><td style="font-family:monospace">${ip}</td><td style="font-family:monospace;color:var(--muted)">${mac}</td></tr>`
+      ).join('');
+    } catch(e) {}
+  }
+
+  // ── Demo Alerts ────────────────────────────────────────────────
+  async function demoAlert(type) {
+    try {
+      const res = await fetch(`/api/demo/${type}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'injected') {
+        addDemoLog(`✅ Injected: ${type}`, 'green');
+        showToast(`🧪 Demo: ${type} alert fired!`, 'MEDIUM');
+      }
+    } catch(e) {
+      addDemoLog(`❌ Failed: ${type} - ${e.message}`, 'red');
+    }
+  }
+
+  async function demoAll() {
+    addDemoLog('🚀 Firing all demo scenarios...', 'accent');
+    try {
+      const res = await fetch('/api/demo/all', { method: 'POST' });
+      const data = await res.json();
+      addDemoLog(`✅ Injected ${data.count} demo alerts!`, 'green');
+      showToast(`🧪 All ${data.count} demo alerts fired!`, 'MEDIUM');
+    } catch(e) {
+      addDemoLog(`❌ Error: ${e.message}`, 'red');
+    }
+  }
+
+  function addDemoLog(msg, colorKey) {
+    const log = document.getElementById('demo-log');
+    // Clear placeholder
+    if (log.querySelector('span')) log.innerHTML = '';
+    const colorMap = { green: 'var(--green)', red: 'var(--red)', accent: 'var(--accent)', muted: 'var(--muted)' };
+    const line = document.createElement('div');
+    line.style.color = colorMap[colorKey] || 'var(--text)';
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    log.insertBefore(line, log.firstChild);
+  }
+
+  // ── Module Explorer ────────────────────────────────────────────
+  let modulesLoaded = false;
+  async function loadModules() {
+    if (modulesLoaded) return;
+    try {
+      const res = await fetch('/api/modules');
+      const modules = await res.json();
+      renderModules(modules);
+      modulesLoaded = true;
+    } catch(e) {
+      document.getElementById('modules-grid').innerHTML = '<div style="color:var(--red)">Failed to load modules.</div>';
+    }
+  }
+
+  function renderModules(modules) {
+    const grid = document.getElementById('modules-grid');
+    grid.innerHTML = '';
+    for (const [name, mod] of Object.entries(modules)) {
+      const card = document.createElement('div');
+      card.className = 'module-card';
+      card.style.borderTopColor = mod.color;
+      card.style.borderTopWidth = '3px';
+
+      const detectsHtml = mod.detects.length
+        ? mod.detects.map(d => `<span class="detect-pill">${d}</span>`).join('')
+        : '<span style="color:var(--muted);font-size:11px">N/A</span>';
+
+      const fnsHtml = mod.functions.map(fn => `
+        <div class="fn-item" style="border-left-color:${mod.color}">
+          <div class="fn-name">${escHtml(fn.name)}</div>
+          <div class="fn-desc">${escHtml(fn.desc)}</div>
+        </div>
+      `).join('');
+
+      card.innerHTML = `
+        <div class="module-header" onclick="toggleModule(this.parentElement)">
+          <span class="module-emoji">${mod.emoji}</span>
+          <div style="flex:1">
+            <div class="module-title" style="color:${mod.color}">${escHtml(name)}</div>
+            <div class="module-file">${mod.file}</div>
+          </div>
+          <span class="module-expand-icon">▾</span>
+        </div>
+        <div class="module-desc">${escHtml(mod.description)}</div>
+        ${mod.detects.length ? `<div class="module-detects">${detectsHtml}</div>` : ''}
+        <div class="module-body">
+          <div style="font-size:11px;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:0.5px">Functions (${mod.functions.length})</div>
+          ${fnsHtml}
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+  }
+
+  function toggleModule(card) {
+    card.classList.toggle('expanded');
+  }
+
+  // ── Live Packets ───────────────────────────────────────────────
+  function setPktFilter(f, btn) {
+    document.querySelectorAll('.pkt-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    pktFilter = f;
+    renderPackets();
+  }
+
+  function clearPackets() {
+    allPackets = [];
+    document.getElementById('pkt-body').innerHTML =
+      '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Cleared.</td></tr>';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('pkt-pause').addEventListener('change', function() {
+      pktPaused = this.checked;
+    });
+  });
+
+  function renderPackets() {
+    const tbody = document.getElementById('pkt-body');
+    const filtered = pktFilter === 'ALL'
+      ? allPackets
+      : allPackets.filter(p => p.proto === pktFilter);
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">No packets yet. Start monitoring and select a protocol filter.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = filtered.slice(0, 200).map(p => `
+      <tr class="pkt-row-${p.proto}">
+        <td style="white-space:nowrap;color:var(--muted)">${escHtml(p.time)}</td>
+        <td><span style="font-family:monospace;font-weight:700">${escHtml(p.proto)}</span></td>
+        <td style="font-family:monospace">${escHtml(p.src)}</td>
+        <td style="font-family:monospace">${escHtml(p.dst)}</td>
+        <td style="font-family:monospace;color:var(--muted)">${escHtml(p.sport)}</td>
+        <td style="font-family:monospace;color:var(--muted)">${escHtml(p.dport)}</td>
+        <td><span style="font-family:monospace;font-size:11px">${escHtml(p.flags)}</span></td>
+        <td style="color:var(--muted)">${p.length}</td>
+        <td style="font-size:12px;max-width:300px;word-break:break-word">${escHtml(p.info)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function updateProtoStats(data) {
+    const counts = data.counts || {};
+    const bytes  = data.bytes  || {};
+
+    const tcp  = counts.TCP  || 0;
+    const udp  = counts.UDP  || 0;
+    const icmp = counts.ICMP || 0;
+    const arp  = counts.ARP  || 0;
+    const total = tcp + udp + icmp + arp;
+
+    document.getElementById('pkt-tcp').textContent  = tcp;
+    document.getElementById('pkt-udp').textContent  = udp;
+    document.getElementById('pkt-icmp').textContent = icmp;
+    document.getElementById('pkt-arp').textContent  = arp;
+    document.getElementById('pkt-total').textContent = total;
+
+    document.getElementById('pkt-tcp-bytes').textContent  = fmtBytes(bytes.TCP  || 0);
+    document.getElementById('pkt-udp-bytes').textContent  = fmtBytes(bytes.UDP  || 0);
+    document.getElementById('pkt-icmp-bytes').textContent = fmtBytes(bytes.ICMP || 0);
+    document.getElementById('pkt-arp-bytes').textContent  = fmtBytes(bytes.ARP  || 0);
+    document.getElementById('pkt-total-bytes').textContent = fmtBytes(
+      (bytes.TCP||0) + (bytes.UDP||0) + (bytes.ICMP||0) + (bytes.ARP||0));
+
+    // Update protocol charts
+    const protoLabels = ['TCP', 'UDP', 'ICMP', 'ARP'];
+    const protoData   = [tcp, udp, icmp, arp];
+    const protoColors = ['#58a6ff', '#3fb950', '#d29922', '#a371f7'];
+
+    if (protoChart) protoChart.destroy();
+    const ctx3 = document.getElementById('protoChart').getContext('2d');
+    protoChart = new Chart(ctx3, {
+      type: 'doughnut',
+      data: {
+        labels: protoLabels,
+        datasets: [{ data: protoData, backgroundColor: protoColors, borderWidth: 0 }]
+      },
+      options: {
+        plugins: { legend: { position: 'right', labels: { color: '#8b949e', font: {size:12} } } },
+        maintainAspectRatio: true
+      }
+    });
+
+    if (bytesChart) bytesChart.destroy();
+    const ctx4 = document.getElementById('bytesChart').getContext('2d');
+    bytesChart = new Chart(ctx4, {
+      type: 'bar',
+      data: {
+        labels: protoLabels,
+        datasets: [{
+          label: 'Bytes',
+          data: [bytes.TCP||0, bytes.UDP||0, bytes.ICMP||0, bytes.ARP||0],
+          backgroundColor: protoColors,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function fmtBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+    return (b/1024/1024).toFixed(1) + ' MB';
+  }
+
+  // ── Render ─────────────────────────────────────────────────────
+  function filterAlerts(type, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = type;
+    renderAlerts();
+  }
+
+  function renderAlerts() {
+    const tbody = document.getElementById('alerts-body');
+    let filtered = allAlerts;
+
+    if (currentFilter !== 'ALL') {
+      if (['HIGH', 'MEDIUM', 'LOW'].includes(currentFilter)) {
+        filtered = allAlerts.filter(a => a.severity === currentFilter);
+      } else {
+        filtered = allAlerts.filter(a => a.alert_type === currentFilter);
+      }
+    }
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">No alerts match the current filter.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = filtered.map((a) => `
+      <tr class="${a._new ? 'new-alert' : ''}">
+        <td style="white-space:nowrap;color:var(--muted)">${a.timestamp || '-'}</td>
+        <td><span class="type-badge type-${a.alert_type}">${a.alert_type}</span></td>
+        <td><span class="badge badge-${a.severity}">${a.severity}</span></td>
+        <td style="font-family:monospace">${a.src_ip || '-'}</td>
+        <td style="font-family:monospace">${a.dst_ip || '-'}</td>
+        <td style="max-width:400px;word-break:break-word">${escHtml(a.description || '')}</td>
+      </tr>
+    `).join('');
+  }
+
+  function updateStatCards(stats) {
+    document.getElementById('stat-total').textContent = stats.total || 0;
+    document.getElementById('stat-high').textContent = stats.by_severity?.HIGH || 0;
+    document.getElementById('stat-medium').textContent = stats.by_severity?.MEDIUM || 0;
+    document.getElementById('stat-low').textContent = stats.by_severity?.LOW || 0;
+    const bt = stats.by_type || {};
+    document.getElementById('stat-arp').textContent =
+      (bt.ARP_SPOOF || 0) + (bt.ARP_FLOOD || 0) + (bt.GRATUITOUS_ARP || 0);
+    document.getElementById('stat-mitm').textContent =
+      (bt.MITM_TTL || 0) + (bt.SSL_STRIP || 0) + (bt.ICMP_REDIRECT || 0) + (bt.PACKET_REPLAY || 0);
+    document.getElementById('stat-scan').textContent = bt.PORT_SCAN || 0;
+    document.getElementById('stat-brute').textContent = bt.BRUTE_FORCE || 0;
+  }
+
+  function updateCharts(stats) {
+    const bt = stats.by_type || {};
+    const typeLabels = Object.keys(bt);
+    const typeData = Object.values(bt);
+    const COLORS = ['#f85149','#f0883e','#d29922','#a371f7','#58a6ff','#3fb950','#56d364','#e3b341','#ff7b72','#d2a8ff'];
+
+    if (typeChart) typeChart.destroy();
+    const ctx1 = document.getElementById('typeChart').getContext('2d');
+    typeChart = new Chart(ctx1, {
+      type: 'doughnut',
+      data: {
+        labels: typeLabels,
+        datasets: [{ data: typeData, backgroundColor: COLORS, borderWidth: 0 }]
+      },
+      options: {
+        plugins: { legend: { position: 'right', labels: { color: '#8b949e', font: {size:11} } } },
+        maintainAspectRatio: true
+      }
+    });
+
+    const bs = stats.by_severity || {};
+    if (severityChart) severityChart.destroy();
+    const ctx2 = document.getElementById('severityChart').getContext('2d');
+    severityChart = new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: ['HIGH', 'MEDIUM', 'LOW'],
+        datasets: [{
+          label: 'Alerts',
+          data: [bs.HIGH || 0, bs.MEDIUM || 0, bs.LOW || 0],
+          backgroundColor: ['#f85149', '#f0883e', '#d29922'],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function addLiveFeedLine(alert) {
+    const feed = document.getElementById('live-feed');
+    const placeholder = feed.querySelector('span');
+    if (placeholder) feed.innerHTML = '';
+    const line = document.createElement('div');
+    line.className = `feed-line feed-${alert.severity}`;
+    line.textContent = `[${alert.timestamp}] [${alert.alert_type}] ${alert.description.substring(0, 120)}`;
+    feed.insertBefore(line, feed.firstChild);
+    while (feed.children.length > 60) feed.removeChild(feed.lastChild);
+  }
+
+  function showToast(msg, severity) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${severity}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 5100);
+  }
+
+  function updateStatusBadge(active) {
+    const badge = document.getElementById('status-badge');
+    badge.className = 'status-badge ' + (active ? 'active' : 'inactive');
+    badge.textContent = active ? '● Active' : '● Inactive';
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Auto-refresh every 10 seconds
+  setInterval(refreshAll, 10000);
+</script>
+</body>
+</html>

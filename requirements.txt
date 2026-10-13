@@ -1,0 +1,9 @@
+scapy==2.5.0
+flask==3.0.0
+scikit-learn==1.3.2
+pandas==2.1.3
+numpy==1.26.2
+flask-socketio==5.3.6
+eventlet==0.35.2
+colorama==0.4.6
+netifaces==0.11.0
